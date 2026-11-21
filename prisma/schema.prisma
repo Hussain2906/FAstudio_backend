@@ -1,0 +1,149 @@
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum CmsRevisionStatus {
+  DRAFT
+  PUBLISHED
+}
+
+enum AdminRole {
+  SUPER_ADMIN
+  ADMIN
+  EDITOR
+}
+
+model CmsPage {
+  id            String       @id @default(cuid())
+  slug          String       @unique
+  name          String
+  draftMeta     Json?
+  publishedMeta Json?
+  publishedAt   DateTime?
+  createdAt     DateTime     @default(now())
+  updatedAt     DateTime     @updatedAt
+  sections      CmsSection[]
+
+  @@index([publishedAt])
+}
+
+model CmsSection {
+  id                 String               @id @default(cuid())
+  pageId             String
+  type               String
+  draftContent       Json
+  publishedContent   Json?
+  draftOrder         Int                  @default(0)
+  publishedOrder     Int?
+  draftIsVisible     Boolean              @default(true)
+  publishedIsVisible Boolean              @default(false)
+  draftUpdatedAt     DateTime             @default(now())
+  publishedAt        DateTime?
+  createdAt          DateTime             @default(now())
+  updatedAt          DateTime             @updatedAt
+  page               CmsPage              @relation(fields: [pageId], references: [id], onDelete: Cascade)
+  revisions          CmsSectionRevision[]
+
+  @@index([pageId, draftOrder])
+  @@index([pageId, publishedOrder, publishedIsVisible])
+  @@index([type])
+}
+
+model CmsSectionRevision {
+  id        String            @id @default(cuid())
+  sectionId String
+  version   Int
+  status    CmsRevisionStatus
+  content   Json
+  order     Int
+  isVisible Boolean
+  createdAt DateTime          @default(now())
+  section   CmsSection        @relation(fields: [sectionId], references: [id], onDelete: Cascade)
+
+  @@unique([sectionId, version])
+  @@index([sectionId, status])
+}
+
+model AdminUser {
+  id            String              @id @default(cuid())
+  email         String              @unique
+  passwordHash  String
+  role          AdminRole           @default(EDITOR)
+  isActive      Boolean             @default(true)
+  lastLoginAt   DateTime?
+  createdAt     DateTime            @default(now())
+  updatedAt     DateTime            @updatedAt
+  sessions      AdminSession[]
+  loginAttempts AdminLoginAttempt[]
+}
+
+model AdminSession {
+  id          String    @id @default(cuid())
+  tokenHash   String    @unique
+  adminUserId String
+  expiresAt   DateTime
+  revokedAt   DateTime?
+  createdAt   DateTime  @default(now())
+  adminUser   AdminUser @relation(fields: [adminUserId], references: [id], onDelete: Cascade)
+
+  @@index([adminUserId, expiresAt])
+  @@index([expiresAt])
+}
+
+model AdminLoginAttempt {
+  id              String     @id @default(cuid())
+  key             String     @unique
+  attempts        Int        @default(0)
+  windowStartedAt DateTime   @default(now())
+  blockedUntil    DateTime?
+  adminUserId     String?
+  adminUser       AdminUser? @relation(fields: [adminUserId], references: [id], onDelete: SetNull)
+
+  @@index([blockedUntil])
+}
+
+model CmsGlobalComponent {
+  id               String                       @id @default(cuid())
+  type             String                       @unique
+  draftContent     Json
+  publishedContent Json?
+  publishedAt      DateTime?
+  draftUpdatedAt   DateTime                     @default(now())
+  createdAt        DateTime                     @default(now())
+  updatedAt        DateTime                     @updatedAt
+  revisions        CmsGlobalComponentRevision[]
+
+  @@index([type])
+}
+
+model CmsGlobalComponentRevision {
+  id          String             @id @default(cuid())
+  componentId String
+  version     Int
+  status      CmsRevisionStatus
+  content     Json
+  createdAt   DateTime           @default(now())
+  component   CmsGlobalComponent @relation(fields: [componentId], references: [id], onDelete: Cascade)
+
+  @@unique([componentId, version])
+  @@index([componentId, status])
+}
+
+model ContactDeliverySettings {
+  id                    String   @id @default("singleton")
+  smtpHost              String   @default("")
+  smtpPort              Int      @default(587)
+  smtpSecure            Boolean  @default(false)
+  smtpUsername          String   @default("")
+  smtpPasswordEncrypted String?  @db.Text
+  fromEmail             String   @default("")
+  fromName              String   @default("FA Studio")
+  recipientEmail        String   @default("")
+  createdAt             DateTime @default(now())
+  updatedAt             DateTime @updatedAt
+}
