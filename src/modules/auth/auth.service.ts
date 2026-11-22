@@ -1,5 +1,5 @@
 import { randomBytes } from 'node:crypto';
-import { HttpException, HttpStatus, Injectable, UnauthorizedException } from '@nestjs/common';
+import { HttpException, HttpStatus, Injectable, Logger, UnauthorizedException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import * as argon2 from 'argon2';
 import type { Request, Response } from 'express';
@@ -14,14 +14,17 @@ const genericLoginMessage = 'Invalid email or password.';
 
 @Injectable()
 export class AuthService {
+  private readonly logger = new Logger(AuthService.name);
   private readonly sessionTtlSeconds: number;
   private readonly sessionCookieName: string;
   private readonly trustRailwayRealIp: boolean;
+  private readonly authDiagnosticsEnabled: boolean;
 
   constructor(private readonly prisma: PrismaService, config: ConfigService) {
     this.sessionTtlSeconds = config.get<number>('AUTH_SESSION_TTL_SECONDS', 28_800);
     this.sessionCookieName = config.get<string>('AUTH_SESSION_COOKIE_NAME', AUTH_SESSION_COOKIE);
     this.trustRailwayRealIp = config.get<boolean>('TRUST_RAILWAY_REAL_IP', false);
+    this.authDiagnosticsEnabled = config.get<boolean>('AUTH_DIAGNOSTICS_ENABLED', false);
   }
 
   async login(dto: LoginDto, request: Request, response: Response) {
@@ -58,13 +61,27 @@ export class AuthService {
 
   async getAuthenticatedAdmin(request: Request): Promise<AuthenticatedAdmin | null> {
     const rawToken = readSessionToken(request, this.sessionCookieName);
-    if (!rawToken) return null;
+    const requestIdHeader = request.headers['x-request-id'];
+    const requestIdValue = Array.isArray(requestIdHeader) ? requestIdHeader[0] : requestIdHeader;
+    const requestId = typeof requestIdValue === 'string' && /^[a-f0-9-]{36}$/i.test(requestIdValue) ? requestIdValue : 'unavailable';
+    if (!rawToken) {
+      this.logSessionDiagnostic({ requestId, path: request.path, status: 401, sessionCookiePresent: false });
+      return null;
+    }
     const session = await this.prisma.adminSession.findFirst({
       where: { tokenHash: hashSessionToken(rawToken), revokedAt: null, expiresAt: { gt: new Date() }, adminUser: { isActive: true } },
       include: { adminUser: { select: { id: true, email: true, role: true } } },
     });
-    if (!session) return null;
+    if (!session) {
+      this.logSessionDiagnostic({ requestId, path: request.path, status: 401, sessionCookiePresent: true });
+      return null;
+    }
+    this.logSessionDiagnostic({ requestId, path: request.path, status: 200, sessionCookiePresent: true });
     return { ...session.adminUser, sessionId: session.id };
+  }
+
+  private logSessionDiagnostic(data: { requestId: string; path: string; status: number; sessionCookiePresent: boolean }): void {
+    if (this.authDiagnosticsEnabled) this.logger.log(JSON.stringify({ diagnostic: 'auth', stage: 'backend_session_verification', ...data }));
   }
 
   private setCookies(response: Response, sessionToken: string, csrfToken: string, expiresAt: Date): void {

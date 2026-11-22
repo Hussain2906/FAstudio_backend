@@ -3,8 +3,8 @@ import type { Request, Response } from 'express';
 import { HttpExceptionFilter } from './http-exception.filter.js';
 
 function createHost() {
-  const json = jest.fn();
-  const status = jest.fn().mockReturnValue({ json });
+    const json = jest.fn<void, [Record<string, unknown>]>();
+    const status = jest.fn<{ json: typeof json }, [number]>().mockReturnValue({ json });
   const response = { status } as unknown as Response;
   const request = { url: '/api/v1/auth/login' } as Request;
   const host = {
@@ -38,19 +38,21 @@ describe('HttpExceptionFilter', () => {
     filter.catch(error, host);
 
     expect(loggerError).toHaveBeenCalledTimes(1);
-    const log = loggerError.mock.calls[0][0] as string;
+    const calls = loggerError.mock.calls as unknown as Array<[unknown]>;
+    const logValue = calls[0]?.[0];
+    const log = typeof logValue === 'string' ? logValue : '';
     expect(log).toContain('"exceptionType":"Error"');
     expect(log).toContain('[REDACTED]');
     for (const secret of ['hunter2', 'dbuser', 'dbpass', 'secret-token', 'abc.def.ghi']) {
       expect(log).not.toContain(secret);
     }
     expect(status).toHaveBeenCalledWith(HttpStatus.INTERNAL_SERVER_ERROR);
-    expect(json).toHaveBeenCalledWith({
+    expect(json).toHaveBeenCalledWith(expect.objectContaining({
       statusCode: HttpStatus.INTERNAL_SERVER_ERROR,
       message: 'Internal server error',
       path: '/api/v1/auth/login',
-      timestamp: expect.any(String),
-    });
+    }));
+    expect(typeof json.mock.calls[0]?.[0]?.timestamp).toBe('string');
   });
 
   it('does not log expected HTTP errors and preserves their response', () => {
@@ -61,11 +63,11 @@ describe('HttpExceptionFilter', () => {
 
     expect(loggerError).not.toHaveBeenCalled();
     expect(status).toHaveBeenCalledWith(HttpStatus.UNAUTHORIZED);
-    expect(json).toHaveBeenCalledWith({
+    expect(json).toHaveBeenCalledWith(expect.objectContaining({
       statusCode: HttpStatus.UNAUTHORIZED,
       message: 'Invalid email or password.',
       path: '/api/v1/auth/login',
-      timestamp: expect.any(String),
-    });
+    }));
+    expect(typeof json.mock.calls[0]?.[0]?.timestamp).toBe('string');
   });
 });

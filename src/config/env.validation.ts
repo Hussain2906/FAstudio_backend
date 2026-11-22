@@ -15,6 +15,7 @@ export const environmentValidationSchema = Joi.object({
   CLOUDINARY_MAX_UPLOAD_BYTES: Joi.number().integer().positive().max(10485760).default(10485760),
   AUTH_SESSION_TTL_SECONDS: Joi.number().integer().positive().default(28800),
   AUTH_SESSION_COOKIE_NAME: Joi.string().default('fs_admin_session'),
+  AUTH_DIAGNOSTICS_ENABLED: Joi.boolean().truthy('true').falsy('false').default(false),
   CONTACT_SMTP_ENCRYPTION_KEY: Joi.string()
     .pattern(/^[a-fA-F0-9]{64}$/)
     .allow('')
