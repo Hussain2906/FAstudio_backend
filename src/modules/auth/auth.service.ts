@@ -6,7 +6,7 @@ import type { Request, Response } from 'express';
 import { PrismaService } from '../../database/prisma.service.js';
 import { getRateLimitClientIp } from '../../common/get-rate-limit-client-ip.js';
 import { AUTH_BLOCK_MS, AUTH_CSRF_COOKIE, AUTH_LOGIN_WINDOW_MS, AUTH_MAX_LOGIN_ATTEMPTS, AUTH_SESSION_COOKIE } from './auth.constants.js';
-import { hashSessionToken, readSessionToken } from './auth.cookies.js';
+import { createFirebaseSessionCookieValue, FIREBASE_SESSION_COOKIE, hashSessionToken, readSessionToken } from './auth.cookies.js';
 import type { AuthenticatedAdmin } from './auth.types.js';
 import type { LoginDto } from './dto/login.dto.js';
 
@@ -56,6 +56,7 @@ export class AuthService {
     if (rawToken) await this.prisma.adminSession.updateMany({ where: { tokenHash: hashSessionToken(rawToken), revokedAt: null }, data: { revokedAt: new Date() } });
     response.clearCookie(this.sessionCookieName, { httpOnly: true, sameSite: 'lax', secure: process.env.NODE_ENV === 'production', path: '/' });
     response.clearCookie(AUTH_CSRF_COOKIE, { sameSite: 'lax', secure: process.env.NODE_ENV === 'production', path: '/' });
+    response.clearCookie(FIREBASE_SESSION_COOKIE, { httpOnly: true, sameSite: 'lax', secure: process.env.NODE_ENV === 'production', path: '/' });
     return { status: 'ok' };
   }
 
@@ -88,6 +89,7 @@ export class AuthService {
     const secure = process.env.NODE_ENV === 'production';
     response.cookie(this.sessionCookieName, sessionToken, { httpOnly: true, secure, sameSite: 'lax', expires: expiresAt, path: '/' });
     response.cookie(AUTH_CSRF_COOKIE, csrfToken, { httpOnly: false, secure, sameSite: 'lax', expires: expiresAt, path: '/' });
+    response.cookie(FIREBASE_SESSION_COOKIE, createFirebaseSessionCookieValue(sessionToken, csrfToken), { httpOnly: true, secure, sameSite: 'lax', expires: expiresAt, path: '/' });
   }
 
   private async assertLoginAllowed(key: string): Promise<void> {
